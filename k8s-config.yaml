@@ -1,0 +1,120 @@
+---
+# Source: hc-minimal-helm/templates/service-hazelcast.yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: hc-minimal-hazelcast
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: hc-minimal
+  ports:
+    - name: tcp-hazelcast
+      port: 5701
+      protocol: TCP
+      appProtocol: tcp
+---
+# Source: hc-minimal-helm/templates/service.yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: hc-minimal
+  labels:
+    app: hc-minimal
+spec:
+  ports:
+    - name: http-transport-member
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+      appProtocol: tcp
+    - name: grpc-transport-member
+      port: 9090
+      protocol: TCP
+      appProtocol: tcp
+      targetPort: 9090
+  type: LoadBalancer
+  selector:
+    app: hc-minimal
+---
+# Source: hc-minimal-helm/templates/deployment.yml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hc-minimal
+spec:
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: hc-minimal
+  template:
+    metadata:
+      labels:
+        app: hc-minimal
+        appHelmRevision: 1.0.0
+    spec:
+      containers:
+        - name: hc-minimal
+          image: "localhost:32000/hc-minimal:latest"
+          ports:
+          - containerPort: 5701
+            name: hazelcast
+          imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2000Mi
+          readinessProbe:
+            httpGet:
+              port: 8080
+              path: /info
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 1
+          livenessProbe:
+            httpGet:
+              port: 8080
+              path: /info
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+---
+# Source: hc-minimal-helm/templates/hpa.yml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hc-minimal
+spec:
+  maxReplicas: 1
+  minReplicas: 1
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hc-minimal
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 15
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+      selectPolicy: Max
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
